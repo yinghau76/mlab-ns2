@@ -16,7 +16,9 @@
 package rtt
 
 import (
+	"errors"
 	"net"
+	"sort"
 )
 
 const (
@@ -25,8 +27,10 @@ const (
 )
 
 var (
-	v4PrefixMask = net.CIDRMask(v4PrefixSize, 8*net.IPv4len)
-	v6PrefixMask = net.CIDRMask(v6PrefixSize, 8*net.IPv6len)
+	v4PrefixMask        = net.CIDRMask(v4PrefixSize, 8*net.IPv4len)
+	v6PrefixMask        = net.CIDRMask(v6PrefixSize, 8*net.IPv6len)
+	ErrMergeSiteRTT     = errors.New("SiteRTT cannot be merged, mismatching Site IDs.")
+	ErrMergeClientGroup = errors.New("ClientGroups cannot be merged, mismatching ClientGroup Prefixes.")
 )
 
 // GetClientGroup returns a *net.IPNet which represents a subnet of prefix
@@ -43,4 +47,69 @@ func GetClientGroup(ip net.IP) *net.IPNet {
 func IsEqualClientGroup(a, b net.IP) bool {
 	ipnet := GetClientGroup(a)
 	return ipnet.Contains(b)
+}
+
+// MergeSiteRTTs merges a new SiteRTT entry into an old SiteRTT entry if the new
+// entry has lower or equal RTT, and also reports whether the merge has caused
+// any changes.
+func MergeSiteRTTs(oldSR, newSR *SiteRTT) (bool, error) {
+	if oldSR.SiteID != newSR.SiteID {
+		return false, ErrMergeSiteRTT
+	}
+	if newSR.RTT <= oldSR.RTT {
+		oldSR.RTT = newSR.RTT
+		oldSR.LastUpdated = newSR.LastUpdated
+		return true, nil
+	}
+	return false, nil
+}
+
+// MergeClientGroups merges a new list of SiteRTT with an existing list of
+// SiteRTT and sorts it in ascending RTT order. It also reports if the merge has
+// caused any changes.
+// Note: Used for merging new bigquery data with existing datastore data.
+func MergeClientGroups(oldCG, newCG *ClientGroup) (bool, error) {
+	oIP, nIP := net.IP(oldCG.Prefix), net.IP(newCG.Prefix)
+	if !oIP.Equal(nIP) {
+		return false, ErrMergeClientGroup
+	}
+
+	// Populate temporary maps to ease merge
+	oRTTs := make(map[string]*SiteRTT)
+	nRTTs := make(map[string]*SiteRTT)
+	for i, s := range oldCG.SiteRTTs {
+		oRTTs[s.SiteID] = &oldCG.SiteRTTs[i]
+	}
+	for i, s := range newCG.SiteRTTs {
+		nRTTs[s.SiteID] = &newCG.SiteRTTs[i]
+	}
+
+	// Keep SiteRTT with lower RTT
+	var os *SiteRTT
+	var ok, changed, srChanged bool
+	var err error
+	for k, ns := range nRTTs {
+		os, ok = oRTTs[k]
+		if !ok {
+			oRTTs[k] = ns
+			changed = true
+		} else {
+			srChanged, err = MergeSiteRTTs(os, ns)
+			if err != nil {
+				return false, err
+			}
+			if srChanged {
+				changed = true
+			}
+		}
+	}
+
+	// Create new list of SiteRTTs
+	oldCG.SiteRTTs = make(SiteRTTs, 0, len(oRTTs))
+	for _, s := range oRTTs {
+		oldCG.SiteRTTs = append(oldCG.SiteRTTs, *s)
+	}
+	sort.Sort(oldCG.SiteRTTs)
+
+	return changed, nil
 }

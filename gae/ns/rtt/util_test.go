@@ -15,8 +15,11 @@
 package rtt
 
 import (
+	"fmt"
 	"net"
+	"reflect"
 	"testing"
+	"time"
 )
 
 var getClientGroupTests = []struct {
@@ -56,6 +59,123 @@ func TestIsEqualClientGroup(t *testing.T) {
 		ok = IsEqualClientGroup(net.ParseIP(tt.a), net.ParseIP(tt.b))
 		if ok != tt.ok {
 			t.Fatalf("IsEqualClientGroup(%v, %v) = %v, want %v", tt.a, tt.b, ok, tt.ok)
+		}
+	}
+}
+
+var mergeSiteRTTsTests = []struct {
+	oldIn   *SiteRTT
+	newIn   *SiteRTT
+	out     *SiteRTT
+	changed bool
+}{
+	// Case with lower RTT in new SiteRTT
+	{
+		&SiteRTT{"abc01", 1.1, time.Unix(1, 0)},
+		&SiteRTT{"abc01", 0.1, time.Unix(1, 1)},
+		&SiteRTT{"abc01", 0.1, time.Unix(1, 1)},
+		true,
+	},
+	// Case with lower RTT in old SiteRTT
+	{
+		&SiteRTT{"abc01", 0.1, time.Unix(1, 0)},
+		&SiteRTT{"abc01", 1.1, time.Unix(1, 1)},
+		&SiteRTT{"abc01", 0.1, time.Unix(1, 0)},
+		false,
+	},
+}
+
+func TestMergeSiteRTTs(t *testing.T) {
+	var ok bool
+	var err error
+	var newSiteRTTStr string
+	for _, tt := range mergeSiteRTTsTests {
+		newSiteRTTStr = fmt.Sprintf("%v", tt.oldIn)
+		ok, err = MergeSiteRTTs(tt.oldIn, tt.newIn)
+		if err != nil || !reflect.DeepEqual(tt.oldIn, tt.out) || ok != tt.changed {
+			t.Fatalf("MergeSiteRTTs(%s, %v) = %v, %v, want %v, %v", newSiteRTTStr, tt.newIn, tt.oldIn, ok, tt.out, tt.changed)
+		}
+	}
+}
+
+var mergeClientGroupsTests = []struct {
+	oldIn   *ClientGroup
+	newIn   *ClientGroup
+	out     *ClientGroup
+	changed bool
+}{
+	// Case with new insert and update of old value
+	{
+		&ClientGroup{[]byte{173, 194, 36, 73}, []SiteRTT{
+			SiteRTT{"abc01", 1.1, time.Unix(1, 0)},
+		}},
+		&ClientGroup{[]byte{173, 194, 36, 73}, []SiteRTT{
+			SiteRTT{"abc01", 0.9, time.Unix(3, 0)},
+			SiteRTT{"def01", 4.2, time.Unix(2, 0)},
+		}},
+		&ClientGroup{[]byte{173, 194, 36, 73}, []SiteRTT{
+			SiteRTT{"abc01", 0.9, time.Unix(3, 0)},
+			SiteRTT{"def01", 4.2, time.Unix(2, 0)},
+		}},
+		true,
+	},
+	// Case with new insert only
+	{
+		&ClientGroup{[]byte{173, 194, 36, 73}, []SiteRTT{
+			SiteRTT{"abc01", 0.9, time.Unix(3, 0)},
+		}},
+		&ClientGroup{[]byte{173, 194, 36, 73}, []SiteRTT{
+			SiteRTT{"def01", 4.2, time.Unix(2, 0)},
+		}},
+		&ClientGroup{[]byte{173, 194, 36, 73}, []SiteRTT{
+			SiteRTT{"abc01", 0.9, time.Unix(3, 0)},
+			SiteRTT{"def01", 4.2, time.Unix(2, 0)},
+		}},
+		true,
+	},
+	// Update two old values
+	{
+		&ClientGroup{[]byte{173, 194, 36, 73}, []SiteRTT{
+			SiteRTT{"abc01", 0.9, time.Unix(3, 0)},
+			SiteRTT{"def01", 4.2, time.Unix(2, 0)},
+		}},
+		&ClientGroup{[]byte{173, 194, 36, 73}, []SiteRTT{
+			SiteRTT{"abc01", 0.7, time.Unix(4, 0)},
+			SiteRTT{"def01", 4.0, time.Unix(5, 0)},
+		}},
+		&ClientGroup{[]byte{173, 194, 36, 73}, []SiteRTT{
+			SiteRTT{"abc01", 0.7, time.Unix(4, 0)},
+			SiteRTT{"def01", 4.0, time.Unix(5, 0)},
+		}},
+		true,
+	},
+	// No change
+	{
+		&ClientGroup{[]byte{173, 194, 36, 73}, []SiteRTT{
+			SiteRTT{"abc01", 0.7, time.Unix(4, 0)},
+			SiteRTT{"def01", 4.0, time.Unix(5, 0)},
+		}},
+		&ClientGroup{[]byte{173, 194, 36, 73}, []SiteRTT{
+			SiteRTT{"abc01", 0.9, time.Unix(3, 0)},
+			SiteRTT{"def01", 4.2, time.Unix(2, 0)},
+		}},
+		&ClientGroup{[]byte{173, 194, 36, 73}, []SiteRTT{
+			SiteRTT{"abc01", 0.7, time.Unix(4, 0)},
+			SiteRTT{"def01", 4.0, time.Unix(5, 0)},
+		}},
+		false,
+	},
+}
+
+func TestMergeClientGroups(t *testing.T) {
+	var ok bool
+	var err error
+	var newCGStr string
+	for _, tt := range mergeClientGroupsTests {
+		newCGStr = fmt.Sprintf("%v", tt.oldIn)
+		ok, err = MergeClientGroups(tt.oldIn, tt.newIn)
+		if err != nil || !reflect.DeepEqual(tt.oldIn, tt.out) || ok != tt.changed {
+			t.Fatalf("MergeClientGroups(%s, %v) = %v, %v, want %v, %v", newCGStr, tt.newIn, tt.oldIn, ok, tt.out, tt.changed)
 		}
 	}
 }
