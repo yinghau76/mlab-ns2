@@ -12,14 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build appengine
-
 // The data package provides the mlab-ns2 datastore sturcture.
 package data
 
 import (
 	"fmt"
 	"time"
+)
+
+const (
+	SliverStatusOnline  = "online"
+	SliverStatusOffline = "offline"
 )
 
 //TODO: Data interface and Get,Put,Cache,Rm functions?
