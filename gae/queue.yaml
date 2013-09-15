@@ -12,8 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-cron:
-- description: rtt. Daily import of BigQuery data
-  url: /admin/rtt/import/daily
-  schedule: every 8 hours
+queue:
+- name: rtt-import
+  rate: 1/m
+  retry_parameters:
+    task_retry_limit: 3
+    min_backoff_seconds: 2
+  target: backend-b4
+
+- name: rtt-import-put
+  rate: 1/s
+  bucket_size: 50
+  retry_parameters:
+    min_backoff_seconds: 2
   target: backend-b4
