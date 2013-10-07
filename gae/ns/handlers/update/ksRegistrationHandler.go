@@ -14,8 +14,8 @@
 
 // +build appengine
 
-// The handlers package provides the mlab-ns2 handlers"
-package handlers
+// The update package provides the mlab-ns2 update handlers
+package update
 
 import (
 	"appengine"
