@@ -250,6 +250,7 @@ func (t *Transport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return resp, err
 	}
+	defer resp.Body.Close()
 
 	// Form credentials based on the challenge.
 	cr := t.newCredentials(req2, c)
